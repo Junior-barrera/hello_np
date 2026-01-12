@@ -7,6 +7,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- MarkerCluster para agrupar puntos -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
@@ -92,6 +98,40 @@
         
         .panel-section::-webkit-scrollbar-thumb:hover {
             background: #555;
+        }
+        
+        /* Estilos para clusters */
+        .marker-cluster-small {
+            background-color: rgba(110, 204, 57, 0.6);
+        }
+        .marker-cluster-small div {
+            background-color: rgba(110, 204, 57, 0.8);
+            color: white;
+            font-weight: bold;
+        }
+        .marker-cluster-medium {
+            background-color: rgba(240, 194, 12, 0.6);
+        }
+        .marker-cluster-medium div {
+            background-color: rgba(240, 194, 12, 0.8);
+            color: white;
+            font-weight: bold;
+        }
+        .marker-cluster-large {
+            background-color: rgba(241, 128, 23, 0.6);
+        }
+        .marker-cluster-large div {
+            background-color: rgba(241, 128, 23, 0.8);
+            color: white;
+            font-weight: bold;
+        }
+        .marker-cluster {
+            border-radius: 50%;
+        }
+        .marker-cluster div {
+            border-radius: 50%;
+            text-align: center;
+            font-family: Arial, sans-serif;
         }
     </style>
 </head>
@@ -369,6 +409,18 @@
                     <h3 class="font-bold text-gray-700 mb-2 text-sm">
                         <i class="fas fa-chart-bar mr-2"></i>Estadísticas
                     </h3>
+                    
+                    <!-- Indicador de puntos en mapa -->
+                    <div class="bg-purple-50 border border-purple-200 rounded p-2 mb-3">
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-purple-700" id="visibleCount">0</div>
+                            <div class="text-xs text-purple-600 font-medium">
+                                <i class="fas fa-map-marked-alt mr-1"></i>Visibles en Mapa
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">de <span id="totalAvailable">0</span> total</div>
+                        </div>
+                    </div>
+                    
                     <div class="grid grid-cols-3 gap-2">
                         <div class="bg-blue-50 p-2 rounded text-center border border-blue-100">
                             <div class="text-xl font-bold text-blue-700" id="totalCount">0</div>
@@ -429,6 +481,8 @@
             let currentFilter = 'all'; // all, pending, repaired
             let currentYearFilter = 'all'; // Variable para el filtro de año
             let currentMonthFilter = 'all'; // Variable para el filtro de mes
+            const MAX_LIST_ITEMS = 10; // Máximo de items a mostrar en la lista
+            let markersLayer = null; // MarkerClusterGroup para agrupar marcadores
             
             const severityColors = {
                 high: '#ef4444',
@@ -442,32 +496,57 @@
                 L.latLng(-18.40, -70.25)  // Noreste
             );
             
-            // Inicializar mapa
+            // Inicializar mapa con configuración optimizada
             map = L.map('map', {
                 maxZoom: 19,
-                zoomControl: true
+                zoomControl: true,
+                preferCanvas: true, // Usar Canvas para mejor rendimiento
+                renderer: L.canvas({ tolerance: 5 })
             }).setView([-18.47, -70.30], 12);
+            
+            // Inicializar MarkerClusterGroup para agrupar marcadores automáticamente
+            markersLayer = L.markerClusterGroup({
+                maxClusterRadius: 50, // Radio en píxeles para agrupar
+                spiderfyOnMaxZoom: true, // Expandir al hacer zoom máximo
+                showCoverageOnHover: false, // No mostrar área de cobertura
+                zoomToBoundsOnClick: true, // Hacer zoom al hacer clic en cluster
+                disableClusteringAtZoom: 18, // Desagrupar en zoom 18+
+                animate: true,
+                animateAddingMarkers: false, // Desactivar animación al agregar para mejor performance
+                removeOutsideVisibleBounds: true // Remover marcadores fuera de vista (optimización)
+            });
+            map.addLayer(markersLayer);
             
             // Capas de mapa disponibles
             const mapLayers = {
                 streets: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 20
+                    maxZoom: 20,
+                    updateWhenIdle: false, // Actualizar mientras se hace zoom
+                    keepBuffer: 2 // Mantener tiles en memoria
                     
                 }),
                 dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                    maxZoom: 20
+                    maxZoom: 20,
+                    updateWhenIdle: false,
+                    keepBuffer: 2
         
                 }),
                 satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                    maxZoom: 19
+                    maxZoom: 19,
+                    updateWhenIdle: false,
+                    keepBuffer: 2
                     
                 }),
                 terrain: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 17
+                    maxZoom: 17,
+                    updateWhenIdle: false,
+                    keepBuffer: 2
                     
                 }),
                 heat: L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
-                    maxZoom: 17
+                    maxZoom: 17,
+                    updateWhenIdle: false,
+                    keepBuffer: 2
                     
                 })
             };
@@ -763,10 +842,13 @@
             }
             
             function updateDisplay() {
+                // Limpiar todos los marcadores del cluster group
+                markersLayer.clearLayers();
+                
+                // Limpiar array de marcadores
                 if (window.potholeMarkers) {
-                    window.potholeMarkers.forEach(m => map.removeLayer(m));
+                    window.potholeMarkers = [];
                 }
-                window.potholeMarkers = [];
                 
                 // Filtrar según estado actual
                 let filteredPotholes = potholes;
@@ -792,6 +874,13 @@
                     });
                 }
                 
+                // Actualizar contador de puntos visibles
+                $('#visibleCount').text(filteredPotholes.length);
+                $('#totalAvailable').text(potholes.length);
+                
+                // Crear marcadores y agregarlos al cluster group
+                window.potholeMarkers = [];
+                
                 filteredPotholes.forEach(p => {
                     const isRepaired = p.status === 'Resuelto' || p.status === 'Reparado';
                     let iconHtml = '';
@@ -809,7 +898,12 @@
                         iconAnchor: [12, 12]
                     });
                     
-                    const m = L.marker([p.lat, p.lng], { icon: markerIcon }).addTo(map);
+                    // Crear marcador y agregarlo al cluster group
+                    const m = L.marker([p.lat, p.lng], { 
+                        icon: markerIcon,
+                        riseOnHover: true,
+                        riseOffset: 250
+                    });
                     
                     const statusBadge = isRepaired 
                         ? '<span style="background:#10b981; color:white; padding:2px 8px; border-radius:4px; font-size:11px;">✓ Reparado</span>'
@@ -825,10 +919,15 @@
                             </button>
                         </div>
                     `);
+                    
+                    // Agregar al cluster group
+                    m.addTo(markersLayer);
+                    
+                    // Guardar referencia
                     window.potholeMarkers.push(m);
                 });
                 
-                // Actualizar estadísticas
+                // Actualizar estadísticas generales
                 const pendingCount = potholes.filter(p => !p.status || p.status === 'Pendiente').length;
                 const repairedCount = potholes.filter(p => p.status === 'Resuelto' || p.status === 'Reparado').length;
                 
@@ -873,11 +972,28 @@
                     });
                 }
                 
+                // Ordenar por fecha (más recientes primero)
+                filteredPotholes.sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+                // Tomar solo los últimos 10
+                const displayPotholes = filteredPotholes.slice(0, MAX_LIST_ITEMS);
+                const totalFiltered = filteredPotholes.length;
+                
                 let listHtml = '';
-                if (filteredPotholes.length === 0) {
+                if (displayPotholes.length === 0) {
                     listHtml = '<p class="text-gray-500 text-center py-4 text-sm">No hay baches para los filtros seleccionados</p>';
                 } else {
-                    filteredPotholes.slice().reverse().forEach(p => {
+                    // Mensaje informativo si hay más registros
+                    if (totalFiltered > MAX_LIST_ITEMS) {
+                        listHtml += `
+                            <div class="bg-blue-50 border border-blue-200 rounded p-2 mb-3 text-xs text-blue-800 text-center">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                Mostrando los últimos ${MAX_LIST_ITEMS} de ${totalFiltered} baches
+                            </div>
+                        `;
+                    }
+                    
+                    displayPotholes.forEach(p => {
                         const isRepaired = p.status === 'Resuelto' || p.status === 'Reparado';
                         const statusIcon = isRepaired 
                             ? '<i class="fas fa-check-circle text-green-500"></i>' 
@@ -917,17 +1033,26 @@
                 const years = [...new Set(potholes.map(p => new Date(p.date).getFullYear()))];
                 years.sort((a, b) => b - a); // Ordenar de más reciente a más antiguo
                 
+                // El año más reciente es el primero del array
+                const mostRecentYear = years[0];
+                
+                // Si currentYearFilter aún es 'all', establecerlo al año más reciente
+                if (currentYearFilter === 'all' && years.length > 0) {
+                    currentYearFilter = mostRecentYear;
+                }
+                
                 // Generar HTML de los botones
                 let buttonsHtml = `
-                    <button class="year-btn bg-purple-500 text-white px-3 py-2 rounded text-xs font-medium hover:bg-purple-600 transition" data-year="all">
+                    <button class="year-btn ${currentYearFilter === 'all' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-700'} hover:bg-purple-100 px-3 py-2 rounded text-xs font-medium transition" data-year="all">
                         <i class="fas fa-calendar mr-1"></i>Todos los años (<span class="year-count">${potholes.length}</span>)
                     </button>
                 `;
                 
                 years.forEach(year => {
                     const count = potholes.filter(p => new Date(p.date).getFullYear() === year).length;
+                    const isActive = currentYearFilter == year;
                     buttonsHtml += `
-                        <button class="year-btn bg-gray-100 hover:bg-purple-100 text-gray-700 hover:text-purple-700 px-3 py-2 rounded text-xs font-medium transition" data-year="${year}">
+                        <button class="year-btn ${isActive ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-700'} hover:bg-purple-100 px-3 py-2 rounded text-xs font-medium transition" data-year="${year}">
                             <i class="fas fa-calendar-check mr-1"></i>${year} (<span class="year-count">${count}</span>)
                         </button>
                     `;
