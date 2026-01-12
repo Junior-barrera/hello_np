@@ -7,12 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
-    <!-- MarkerCluster para agrupar puntos -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-    
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
@@ -98,40 +92,6 @@
         
         .panel-section::-webkit-scrollbar-thumb:hover {
             background: #555;
-        }
-        
-        /* Estilos para clusters */
-        .marker-cluster-small {
-            background-color: rgba(110, 204, 57, 0.6);
-        }
-        .marker-cluster-small div {
-            background-color: rgba(110, 204, 57, 0.8);
-            color: white;
-            font-weight: bold;
-        }
-        .marker-cluster-medium {
-            background-color: rgba(240, 194, 12, 0.6);
-        }
-        .marker-cluster-medium div {
-            background-color: rgba(240, 194, 12, 0.8);
-            color: white;
-            font-weight: bold;
-        }
-        .marker-cluster-large {
-            background-color: rgba(241, 128, 23, 0.6);
-        }
-        .marker-cluster-large div {
-            background-color: rgba(241, 128, 23, 0.8);
-            color: white;
-            font-weight: bold;
-        }
-        .marker-cluster {
-            border-radius: 50%;
-        }
-        .marker-cluster div {
-            border-radius: 50%;
-            text-align: center;
-            font-family: Arial, sans-serif;
         }
     </style>
 </head>
@@ -409,18 +369,6 @@
                     <h3 class="font-bold text-gray-700 mb-2 text-sm">
                         <i class="fas fa-chart-bar mr-2"></i>Estadísticas
                     </h3>
-                    
-                    <!-- Indicador de puntos en mapa -->
-                    <div class="bg-purple-50 border border-purple-200 rounded p-2 mb-3">
-                        <div class="text-center">
-                            <div class="text-2xl font-bold text-purple-700" id="visibleCount">0</div>
-                            <div class="text-xs text-purple-600 font-medium">
-                                <i class="fas fa-map-marked-alt mr-1"></i>Visibles en Mapa
-                            </div>
-                            <div class="text-xs text-gray-500 mt-1">de <span id="totalAvailable">0</span> total</div>
-                        </div>
-                    </div>
-                    
                     <div class="grid grid-cols-3 gap-2">
                         <div class="bg-blue-50 p-2 rounded text-center border border-blue-100">
                             <div class="text-xl font-bold text-blue-700" id="totalCount">0</div>
@@ -482,7 +430,7 @@
             let currentYearFilter = 'all'; // Variable para el filtro de año
             let currentMonthFilter = 'all'; // Variable para el filtro de mes
             const MAX_LIST_ITEMS = 10; // Máximo de items a mostrar en la lista
-            let markersLayer = null; // MarkerClusterGroup para agrupar marcadores
+            let markersLayer = null; // Layer group para los marcadores
             
             const severityColors = {
                 high: '#ef4444',
@@ -504,18 +452,8 @@
                 renderer: L.canvas({ tolerance: 5 })
             }).setView([-18.47, -70.30], 12);
             
-            // Inicializar MarkerClusterGroup para agrupar marcadores automáticamente
-            markersLayer = L.markerClusterGroup({
-                maxClusterRadius: 50, // Radio en píxeles para agrupar
-                spiderfyOnMaxZoom: true, // Expandir al hacer zoom máximo
-                showCoverageOnHover: false, // No mostrar área de cobertura
-                zoomToBoundsOnClick: true, // Hacer zoom al hacer clic en cluster
-                disableClusteringAtZoom: 18, // Desagrupar en zoom 18+
-                animate: true,
-                animateAddingMarkers: false, // Desactivar animación al agregar para mejor performance
-                removeOutsideVisibleBounds: true // Remover marcadores fuera de vista (optimización)
-            });
-            map.addLayer(markersLayer);
+            // Inicializar layer group para marcadores (persistente durante zoom)
+            markersLayer = L.layerGroup().addTo(map);
             
             // Capas de mapa disponibles
             const mapLayers = {
@@ -842,7 +780,7 @@
             }
             
             function updateDisplay() {
-                // Limpiar todos los marcadores del cluster group
+                // Limpiar todos los marcadores del layer group
                 markersLayer.clearLayers();
                 
                 // Limpiar array de marcadores
@@ -874,11 +812,7 @@
                     });
                 }
                 
-                // Actualizar contador de puntos visibles
-                $('#visibleCount').text(filteredPotholes.length);
-                $('#totalAvailable').text(potholes.length);
-                
-                // Crear marcadores y agregarlos al cluster group
+                // Crear marcadores y agregarlos al layer group
                 window.potholeMarkers = [];
                 
                 filteredPotholes.forEach(p => {
@@ -898,7 +832,7 @@
                         iconAnchor: [12, 12]
                     });
                     
-                    // Crear marcador y agregarlo al cluster group
+                    // Crear marcador y agregarlo al layer group (no directamente al mapa)
                     const m = L.marker([p.lat, p.lng], { 
                         icon: markerIcon,
                         riseOnHover: true,
@@ -920,14 +854,14 @@
                         </div>
                     `);
                     
-                    // Agregar al cluster group
+                    // Agregar al layer group
                     m.addTo(markersLayer);
                     
                     // Guardar referencia
                     window.potholeMarkers.push(m);
                 });
                 
-                // Actualizar estadísticas generales
+                // Actualizar estadísticas
                 const pendingCount = potholes.filter(p => !p.status || p.status === 'Pendiente').length;
                 const repairedCount = potholes.filter(p => p.status === 'Resuelto' || p.status === 'Reparado').length;
                 
